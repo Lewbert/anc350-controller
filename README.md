@@ -15,8 +15,8 @@ GUI application for controlling attocube ANC350 nanopositioners with an Xbox-com
 - All settings persist across sessions.
 
 <p align="center">
-  <img src="img/sc-1.png" height="500" alt="Main interface" />
-  <img src="img/sc-2.png" height="500" alt="Settings dialog" />
+  <img src="img/sc-1.png" height="400" alt="Main interface" />&ensp;
+  <img src="img/sc-2.png" height="400" alt="Settings dialog" />
 </p>
 
 ## Prerequisites
@@ -30,8 +30,7 @@ GUI application for controlling attocube ANC350 nanopositioners with an Xbox-com
 
 Download the latest `ANC350_Controller.exe` from the [Releases](https://github.com/Lewbert/anc350-controller/releases) page. No installation required — just run the executable.
 
-<details>
-<summary>Running or building from source</summary>
+In case you want to run or build from source:
 
 **Run from source:**
 ```bash
@@ -45,7 +44,6 @@ pip install pyqt5 pyqtgraph pyinstaller pillow
 pyinstaller ANC350_Controller.spec
 ```
 The executable will be in `dist/`.
-</details>
 
 ## Gamepad Controls
 
