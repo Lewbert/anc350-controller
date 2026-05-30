@@ -11,9 +11,12 @@ from app.config import (
 class StageController(QObject):
     """Bridges controller input to ANC350 commands via a virtual point model.
 
-    Two modes:
-      CL_MODE  — closed-loop: joystick moves virtual point, stage auto-follows
-      STEP_MODE — paused: after single-step, waiting for joystick to resume
+    Two modes (tracked independently for XY and Z):
+      CL_MODE  — closed-loop: virtual point moves, stage auto-follows
+      STEP_MODE — paused: after single-step, waiting for user to resume
+
+    XY:  left-stick (continuous) / d-pad (single-step) → CL_MODE / STEP_MODE
+    Z:   A/B long-press (continuous) / A/B short-press (single-step) → CL_MODE / STEP_MODE
     """
 
     CL_MODE   = 0
@@ -28,7 +31,8 @@ class StageController(QObject):
         super().__init__(parent)
         self._pos = positioner
         self._settings = settings
-        self._mode = self.CL_MODE
+        self._xy_mode = self.CL_MODE
+        self._z_mode = self.CL_MODE
         self._axes_enabled = False
 
         # Virtual target in µm
@@ -43,6 +47,11 @@ class StageController(QObject):
         self._vx = 0.0
         self._vy = 0.0
         self._vz = 0.0
+
+        # Z closed-loop continuous movement
+        self._z_direction = 0      # 0=none, 1=forward, -1=backward
+        self._z_move_timer = QTimer(self)
+        self._z_move_timer.timeout.connect(self._tick_z_movement)
 
         # Speed
         self._fast_mode = False
@@ -90,7 +99,8 @@ class StageController(QObject):
                 pass
 
         self._enable_all()
-        self._mode = self.CL_MODE
+        self._xy_mode = self.CL_MODE
+        self._z_mode = self.CL_MODE
 
         # Read back and display the actual current values
         params = {}
@@ -106,11 +116,14 @@ class StageController(QObject):
         self.position_updated.emit(self._tx, self._ty, self._tz)
 
     def on_disconnected(self):
-        self._mode = self.CL_MODE
+        self._xy_mode = self.CL_MODE
+        self._z_mode = self.CL_MODE
         self._axes_enabled = False
         self.axes_enabled_changed.emit(False)
         self._a_timer.stop()
         self._b_timer.stop()
+        self._z_move_timer.stop()
+        self._z_direction = 0
 
     # --- Joystick input (XY movement) -----------------------------------------
 
@@ -121,8 +134,8 @@ class StageController(QObject):
 
         joystick_active = abs(lx) > 0.001 or abs(ly) > 0.001
 
-        # If paused after single-step, only resume when joystick is moved
-        if self._mode == self.STEP_MODE:
+        # If XY paused after single-step, only resume when joystick is moved
+        if self._xy_mode == self.STEP_MODE:
             if joystick_active:
                 self._resume_closed_loop()
             else:
@@ -177,8 +190,9 @@ class StageController(QObject):
         if not self._axes_enabled or (dx == 0 and dy == 0):
             return
 
-        self._mode = self.STEP_MODE
-        self._pending_step_axes = []
+        self._xy_mode = self.STEP_MODE
+        # Remove stale XY entries, preserve Z entries
+        self._pending_step_axes = [a for a in self._pending_step_axes if a == Axis.Z]
 
         try:
             if dx != 0:
@@ -204,7 +218,7 @@ class StageController(QObject):
     # --- A/B button (Z axis) --------------------------------------------------
 
     def on_button_a(self, pressed: bool):
-        """A button: Z forward. Short press = single step, long press = continuous."""
+        """A button: Z forward. Short press = single step, long press = closed-loop."""
         if not self._axes_enabled:
             return
 
@@ -218,10 +232,10 @@ class StageController(QObject):
                 self._a_timer.stop()
                 self._z_single_step(backward=0)
             elif self._a_was_long:
-                self._stop_z_continuous()
+                self._stop_z_closed_loop()
 
     def on_button_b(self, pressed: bool):
-        """B button: Z backward."""
+        """B button: Z backward. Short press = single step, long press = closed-loop."""
         if not self._axes_enabled:
             return
 
@@ -235,51 +249,97 @@ class StageController(QObject):
                 self._b_timer.stop()
                 self._z_single_step(backward=1)
             elif self._b_was_long:
-                self._stop_z_continuous()
+                self._stop_z_closed_loop()
 
     def _on_a_long_press(self):
+        """Start Z closed-loop movement forward."""
         if self._a_held:
             self._a_was_long = True
-            backward = 1 if self._settings.get_inverted(Axis.Z) else 0
-            try:
-                self._pos.startContinuousMove(Axis.Z, 1, backward)
-                self._vz = FREQ_Z if backward == 0 else -FREQ_Z
-                self.velocity_updated.emit(self._vx, self._vy, self._vz)
-            except Exception:
-                pass
+            self._start_z_closed_loop(direction=1)
 
     def _on_b_long_press(self):
+        """Start Z closed-loop movement backward."""
         if self._b_held:
             self._b_was_long = True
-            backward = 0 if self._settings.get_inverted(Axis.Z) else 1
-            try:
-                self._pos.startContinuousMove(Axis.Z, 1, backward)
-                self._vz = FREQ_Z if backward == 0 else -FREQ_Z
-                self.velocity_updated.emit(self._vx, self._vy, self._vz)
-            except Exception:
-                pass
+            self._start_z_closed_loop(direction=-1)
 
-    def _stop_z_continuous(self):
-        """Stop Z continuous move and sync position."""
+    def _start_z_closed_loop(self, direction: int):
+        """Enter Z closed-loop and begin moving the virtual target in *direction*."""
+        self._z_mode = self.CL_MODE
+        self._z_direction = direction
         try:
-            self._pos.startContinuousMove(Axis.Z, 0, 0)
-            self._tz = self._pos.get_position_um(Axis.Z)
-            self._vz = 0.0
-            self.position_updated.emit(self._tx, self._ty, self._tz)
-            self.velocity_updated.emit(self._vx, self._vy, self._vz)
+            self._pos.setTargetPosition(Axis.Z, self._tz / 1e6)
+            self._pos.startAutoMove(Axis.Z, 1, 0)
+        except Exception:
+            pass
+        self._z_move_timer.start(int(1000 / POLL_RATE))
+
+    def _stop_z_closed_loop(self):
+        """Stop Z closed-loop movement (button released). Auto-move stays active
+        so the stage converges to the last target position."""
+        self._z_move_timer.stop()
+        self._z_direction = 0
+        self._vz = 0.0
+        self.velocity_updated.emit(self._vx, self._vy, self._vz)
+
+    def _tick_z_movement(self):
+        """Called by _z_move_timer each poll interval: advance Z virtual target."""
+        if not self._axes_enabled or self._z_mode != self.CL_MODE:
+            self._z_move_timer.stop()
+            return
+        if self._z_direction == 0:
+            return
+
+        z_speed = self._settings.get_z_speed()
+        dt = 1.0 / POLL_RATE
+        move = self._z_direction * z_speed * dt
+
+        if self._settings.get_inverted(Axis.Z):
+            move = -move
+
+        self._tz += move
+
+        # Clamp to configured range
+        z_min, z_max = self._settings.get_range(Axis.Z)
+        self._tz = max(z_min, min(self._tz, z_max))
+
+        try:
+            self._pos.setTargetPosition(Axis.Z, self._tz / 1e6)
         except Exception:
             pass
 
+        self._vz = self._z_direction * z_speed
+        if self._settings.get_inverted(Axis.Z):
+            self._vz = -self._vz
+        self.position_updated.emit(self._tx, self._ty, self._tz)
+        self.velocity_updated.emit(self._vx, self._vy, self._vz)
+
     def _z_single_step(self, backward: int):
-        """Trigger a Z single-step and read back position."""
+        """Trigger a Z single-step, exit closed-loop, and read back position."""
         if self._settings.get_inverted(Axis.Z):
             backward = 1 - backward
-        self._mode = self.STEP_MODE
+
+        # Stop closed-loop movement
+        self._z_move_timer.stop()
+        self._z_direction = 0
+
+        # Stop Z auto-move before single step
+        try:
+            self._pos.startAutoMove(Axis.Z, 0, 0)
+        except Exception:
+            pass
+
+        self._z_mode = self.STEP_MODE
+        self._vz = 0.0
+        self.velocity_updated.emit(self._vx, self._vy, 0.0)
+
         try:
             self._pos.startSingleStep(Axis.Z, backward)
         except Exception:
             return
-        self._pending_step_axes = [Axis.Z]
+        # Remove stale Z entry, preserve XY entries
+        self._pending_step_axes = [a for a in self._pending_step_axes if a != Axis.Z]
+        self._pending_step_axes.append(Axis.Z)
         self._step_readback_timer.start(100)
 
     # --- Menu button ----------------------------------------------------------
@@ -314,7 +374,7 @@ class StageController(QObject):
 
     def _resume_closed_loop(self):
         """Re-engage closed-loop auto-move for X and Y."""
-        self._mode = self.CL_MODE
+        self._xy_mode = self.CL_MODE
         try:
             self._pos.move_to_xy(self._tx, self._ty)
         except Exception:

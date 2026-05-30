@@ -23,6 +23,7 @@ FREQ_Z  = 500.0   # Hz
 
 SLOW_SPEED = 100.0   # µm/s (joystick only)
 FAST_SPEED = 500.0   # µm/s (trigger + joystick)
+Z_SPEED    = 100.0   # µm/s (A/B long-press closed-loop)
 DEAD_ZONE  = 0.1     # fraction of full joystick range
 
 # --- Controller --------------------------------------------------------------
@@ -79,6 +80,7 @@ class AppSettings(QObject):
         self._flip_y = False
         self._slow_speed = SLOW_SPEED
         self._fast_speed = FAST_SPEED
+        self._z_speed = Z_SPEED
         self.load()
 
     def get_range(self, axis: Axis) -> tuple[float, float]:
@@ -118,6 +120,12 @@ class AppSettings(QObject):
     def set_fast_speed(self, value: float) -> None:
         self._fast_speed = float(value)
 
+    def get_z_speed(self) -> float:
+        return self._z_speed
+
+    def set_z_speed(self, value: float) -> None:
+        self._z_speed = float(value)
+
     def save(self) -> None:
         """Persist current settings to disk."""
         for axis in (Axis.X, Axis.Y, Axis.Z):
@@ -129,6 +137,7 @@ class AppSettings(QObject):
         self._qsettings.setValue("diagram/flip_y", self._flip_y)
         self._qsettings.setValue("speed/slow", self._slow_speed)
         self._qsettings.setValue("speed/fast", self._fast_speed)
+        self._qsettings.setValue("speed/z", self._z_speed)
         self.range_changed.emit()
 
     def load(self) -> None:
@@ -142,3 +151,4 @@ class AppSettings(QObject):
         self._flip_y = self._qsettings.value("diagram/flip_y", False, type=bool)
         self._slow_speed = self._qsettings.value("speed/slow", SLOW_SPEED, type=float)
         self._fast_speed = self._qsettings.value("speed/fast", FAST_SPEED, type=float)
+        self._z_speed = self._qsettings.value("speed/z", Z_SPEED, type=float)

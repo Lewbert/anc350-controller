@@ -55,6 +55,10 @@ class SettingsDialog(QDialog):
         self._fast_edit = QLineEdit(str(settings.get_fast_speed()))
         self._fast_edit.setValidator(speed_validator)
         speed_form.addRow("Fast speed (µm/s):", self._fast_edit)
+
+        self._z_speed_edit = QLineEdit(str(settings.get_z_speed()))
+        self._z_speed_edit.setValidator(speed_validator)
+        speed_form.addRow("Z speed (µm/s):", self._z_speed_edit)
         layout.addLayout(speed_form)
 
         # --- Axis inversion ---
@@ -113,12 +117,15 @@ class SettingsDialog(QDialog):
         try:
             slow = max(0.1, min(2000.0, float(self._slow_edit.text())))
             fast = max(0.1, min(2000.0, float(self._fast_edit.text())))
+            z_speed = max(0.1, min(2000.0, float(self._z_speed_edit.text())))
         except ValueError:
             return
         self._slow_edit.setText(f"{slow:.1f}")
         self._fast_edit.setText(f"{fast:.1f}")
+        self._z_speed_edit.setText(f"{z_speed:.1f}")
         self._settings.set_slow_speed(slow)
         self._settings.set_fast_speed(fast)
+        self._settings.set_z_speed(z_speed)
 
         self._settings.set_flip_x(self._flip_x_cb.isChecked())
         self._settings.set_flip_y(self._flip_y_cb.isChecked())

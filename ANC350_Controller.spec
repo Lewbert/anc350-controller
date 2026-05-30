@@ -1,13 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
 from pathlib import Path
 
 _project_root = Path(SPECPATH)
 
+# If running in a conda environment, include required DLLs from Library/bin.
+# Derive conda prefix from the running Python executable (handles unactivated conda).
+_conda_prefix = os.environ.get('CONDA_PREFIX', '')
+if not _conda_prefix:
+    # e.g. <conda_env>/python.exe → derive conda prefix
+    _py_exe = Path(os.path.abspath(sys.executable))
+    if (_py_exe.parent / 'Library' / 'bin').is_dir():
+        _conda_prefix = str(_py_exe.parent)
+    elif (_py_exe.parent.parent / 'Library' / 'bin').is_dir():
+        _conda_prefix = str(_py_exe.parent.parent)
+
+_conda_binaries = []
+if _conda_prefix:
+    _conda_lib_bin = Path(_conda_prefix) / 'Library' / 'bin'
+    if _conda_lib_bin.is_dir():
+        # libffi is required by _ctypes.pyd in conda-packaged Python
+        for _dll in _conda_lib_bin.glob('ffi*.dll'):
+            _conda_binaries.append((str(_dll), '.'))
+
 a = Analysis(
     [str(_project_root / 'app' / 'main.py')],
     pathex=[str(_project_root)],
-    binaries=[],
+    binaries=_conda_binaries,
     datas=[
         (str(_project_root / 'anc350v4.dll'), '.'),
         (str(_project_root / 'libusb0.dll'), '.'),
@@ -43,7 +64,7 @@ a = Analysis(
         'PyQt5.QtWebEngineWidgets',
     ],
     noarchive=False,
-    optimize=0,
+    optimize=1,
 )
 
 pyz = PYZ(a.pure)
@@ -57,7 +78,7 @@ exe = EXE(
     name='ANC350_Controller',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
@@ -68,4 +89,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=str(_project_root / 'app' / 'icon.png'),
+    version=str(_project_root / 'app' / 'version_info.txt'),
 )
