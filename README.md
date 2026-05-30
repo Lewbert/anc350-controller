@@ -17,8 +17,7 @@ Tested with ANC350 hardware and a Gamesir Xbox-compatible gamepad.
 - Windows (the ANC350 driver is Windows-only)
 - Python 3.8+
 - Xbox-compatible gamepad
-- **ANC350 driver DLL** (`anc350v4.dll`) — obtain from attocube's software package
-- **libusb0.dll** — install via [libusb-win32](https://sourceforge.net/projects/libusb-win32/) or your ANC350 driver installation
+- `anc350v4.dll` v1.2.0 (included, MIT) and `libusb0.dll` v1.2.5.0 (included, LGPL v2.1)
 
 ## Installation
 
@@ -67,4 +66,6 @@ After a D-pad or short A/B press, the controller enters **step mode**: the virtu
 
 ---
 
-`anc350v4.dll` is proprietary software of attocube systems AG and is **not** included in this repository. Users must obtain it separately from attocube.
+`anc350v4.dll` v1.2.0 from [attocube-systems/ANC350_Python_Control](https://github.com/attocube-systems/ANC350_Python_Control), used under MIT license.
+`libusb0.dll` v1.2.5.0 is [libusb-win32](http://libusb-win32.sourceforge.net), used under LGPL v2.1.
+Third-party licenses are in the [`licenses/`](licenses/) directory.

@@ -1,0 +1,6 @@
+This license applies to libusb0.dll (libusb-win32) v1.2.5.0 included in this project.
+
+The full LGPL v2.1 text can be found at:
+https://www.gnu.org/licenses/lgpl-2.1.txt
+
+libusb-win32 homepage: http://libusb-win32.sourceforge.net
